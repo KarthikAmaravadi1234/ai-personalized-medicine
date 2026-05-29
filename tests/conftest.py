@@ -1,4 +1,9 @@
+import os
 from collections.abc import Generator
+
+# Keep the test suite hermetic: never make real OpenAI calls even if a key is in .env.
+# Blank the key before settings are first read so agent/embedder use offline paths.
+os.environ["OPENAI_API_KEY"] = ""
 
 import pytest
 from fastapi.testclient import TestClient
@@ -6,8 +11,11 @@ from sqlalchemy import Engine, create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
 from backend.api.main import app
+from backend.config import get_settings
 from backend.db.session import get_db
 from backend.models.orm import Base
+
+get_settings.cache_clear()
 
 
 @pytest.fixture()
