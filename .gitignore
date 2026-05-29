@@ -1,0 +1,43 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+.env
+
+# Jupyter
+.ipynb_checkpoints/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Testing / coverage
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Data (never commit real PHI)
+data/synthetic/*.csv
+data/synthetic/*.json
+!data/synthetic/.gitkeep
+
+# ML / vector stores
+*.pkl
+*.joblib
+chroma_data/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Docker volumes
+docker/pgdata/
