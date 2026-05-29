@@ -1,9 +1,11 @@
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
+from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
 from backend.db.session import get_db
 from backend.ingestion.csv_parser import parse_patients_csv
+from backend.ml.predict import score_patient
 from backend.models.orm import LabResult, Patient, Vital
 from backend.models.schemas import (
     LabResultRead,
@@ -13,6 +15,22 @@ from backend.models.schemas import (
 )
 
 router = APIRouter(prefix="/patients", tags=["patients"])
+
+
+class FeatureContributionOut(BaseModel):
+    feature: str
+    value: float
+    contribution: float
+
+
+class RiskResponse(BaseModel):
+    patient_id: int
+    condition: str
+    probability: float
+    risk_level: str
+    model_source: str
+    imputed_features: list[str]
+    contributions: list[FeatureContributionOut]
 
 
 def _to_orm(data: PatientCreate) -> Patient:
@@ -99,3 +117,18 @@ def get_patient_labs(patient_id: int, db: Session = Depends(get_db)) -> list[Lab
     _get_patient_or_404(db, patient_id)
     stmt = select(LabResult).where(LabResult.patient_id == patient_id).order_by(LabResult.id)
     return list(db.scalars(stmt))
+
+
+@router.get("/{patient_id}/risk", response_model=RiskResponse)
+def get_patient_risk(patient_id: int, db: Session = Depends(get_db)) -> RiskResponse:
+    patient = _get_patient_or_404(db, patient_id)
+    features, prediction = score_patient(db, patient)
+    return RiskResponse(
+        patient_id=patient_id,
+        condition="type_2_diabetes",
+        probability=prediction.probability,
+        risk_level=prediction.risk_level,
+        model_source=prediction.model_source,
+        imputed_features=features.imputed,
+        contributions=[FeatureContributionOut(**vars(c)) for c in prediction.contributions],
+    )

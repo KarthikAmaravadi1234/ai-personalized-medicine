@@ -77,3 +77,32 @@ def test_upload_rejects_non_csv(client: TestClient) -> None:
         files={"file": ("notes.txt", b"hello", "text/plain")},
     )
     assert resp.status_code == 415
+
+
+def test_patient_risk_endpoint(client: TestClient) -> None:
+    resp = client.post(
+        "/patients",
+        json={
+            "name": "Risk Person",
+            "sex": "male",
+            "age": 64,
+            "height_cm": 175,
+            "weight_kg": 105,
+            "labs": [
+                {"test_name": "HbA1c", "value": 7.8, "unit": "%", "reference_high": 5.6},
+                {"test_name": "Fasting Glucose", "value": 145, "unit": "mg/dL", "reference_high": 99},
+            ],
+        },
+    )
+    pid = resp.json()["id"]
+    risk = client.get(f"/patients/{pid}/risk")
+    assert risk.status_code == 200
+    body = risk.json()
+    assert body["condition"] == "type_2_diabetes"
+    assert body["risk_level"] == "high"
+    assert 0.0 <= body["probability"] <= 1.0
+    assert body["contributions"]
+
+
+def test_patient_risk_404(client: TestClient) -> None:
+    assert client.get("/patients/9999/risk").status_code == 404
