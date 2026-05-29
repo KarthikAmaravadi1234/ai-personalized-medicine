@@ -42,6 +42,11 @@ data = [
     # so this is only needed for heavier HTML sources.
     "beautifulsoup4>=4.12.0",
 ]
+embeddings = [
+    # Optional: local semantic embeddings for accurate offline RAG. After install,
+    # the first run downloads the model (~90MB); then it works fully offline.
+    "sentence-transformers>=3.0.0",
+]
 
 [build-system]
 requires = ["hatchling"]

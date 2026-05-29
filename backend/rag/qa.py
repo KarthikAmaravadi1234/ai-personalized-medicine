@@ -7,6 +7,7 @@ and makes citations verifiable. An LLM synthesis step can be layered on later.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 
 from backend.rag.retriever import Retriever
@@ -33,6 +34,26 @@ def _excerpt(text: str, max_chars: int = 240) -> str:
     return text if len(text) <= max_chars else text[: max_chars - 1].rstrip() + "\u2026"
 
 
+_SENTENCE_SPLIT_RE = re.compile(r"(?<=[.!?])\s+")
+
+
+def _best_excerpt(text: str, query: str, retriever: Retriever) -> str:
+    """Pick the sentence most relevant to ``query`` so the answer is crisp."""
+    sentences = [s.strip() for s in _SENTENCE_SPLIT_RE.split(text.strip()) if s.strip()]
+    if len(sentences) <= 1:
+        return _excerpt(text)
+    try:
+        vectors = retriever.embedder.embed([*sentences, query])
+        query_vec = vectors[-1]
+        best = max(
+            range(len(sentences)),
+            key=lambda i: sum(a * b for a, b in zip(vectors[i], query_vec)),
+        )
+        return _excerpt(sentences[best])
+    except Exception:  # noqa: BLE001 - never let excerpt selection fail a response
+        return _excerpt(text)
+
+
 def answer_question(
     query: str,
     retriever: Retriever,
@@ -57,7 +78,7 @@ def answer_question(
         Citation(
             source=h.source,
             chunk_index=h.chunk_index,
-            excerpt=_excerpt(h.text),
+            excerpt=_best_excerpt(h.text, query, retriever),
             score=round(h.score, 4),
         )
         for h in hits

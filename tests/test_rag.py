@@ -67,3 +67,33 @@ def test_answer_question_returns_citations() -> None:
 def test_retriever_empty_store_returns_no_hits() -> None:
     retriever = Retriever(embedder=LocalHashEmbedder(dim=64), store=VectorStore())
     assert retriever.search("anything") == []
+
+
+def test_best_sentence_picks_relevant_sentence() -> None:
+    from backend.agents.agent import _best_sentence
+
+    text = (
+        "Hemoglobin is a protein in red blood cells. "
+        "A normal HbA1c is below 5.7 percent. "
+        "Red blood cells live about three months."
+    )
+    out = _best_sentence(text, "what is a normal HbA1c percentage?", LocalHashEmbedder(dim=512))
+    assert "5.7 percent" in out
+
+
+def test_answer_question_filters_low_score_hits() -> None:
+    # With a strict threshold, weakly-related chunks are dropped and not cited.
+    retriever = _build_retriever()
+    answer = answer_question("how to lower blood pressure", retriever, top_k=3, min_score=0.99)
+    assert answer.citations == []
+    assert "couldn't find" in answer.answer.lower()
+
+
+def test_sentence_transformer_backend_optional() -> None:
+    pytest.importorskip("sentence_transformers")
+    from backend.rag.embedder import SentenceTransformerEmbedder
+
+    emb = SentenceTransformerEmbedder()
+    vecs = emb.embed(["elevated LDL cholesterol", "blood pressure"])
+    assert len(vecs) == 2
+    assert emb.dim == len(vecs[0])

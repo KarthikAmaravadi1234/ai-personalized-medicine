@@ -88,6 +88,24 @@ class LocalHashEmbedder:
         return [self._embed_one(t) for t in texts]
 
 
+class SentenceTransformerEmbedder:
+    """Local semantic embeddings via ``sentence-transformers`` (optional dependency).
+
+    Produces dense, normalized vectors with real semantic understanding, runs fully
+    offline after the model is downloaded once, and needs no API key.
+    """
+
+    def __init__(self, model_name: str = "sentence-transformers/all-MiniLM-L6-v2") -> None:
+        from sentence_transformers import SentenceTransformer  # lazy, optional import
+
+        self._model = SentenceTransformer(model_name)
+        self.dim = int(self._model.get_sentence_embedding_dimension())
+
+    def embed(self, texts: list[str]) -> list[list[float]]:
+        vectors = self._model.encode(list(texts), normalize_embeddings=True)
+        return [list(map(float, v)) for v in vectors]
+
+
 class OpenAIEmbedder:
     """OpenAI embeddings backend (optional; requires ``openai`` and an API key)."""
 
@@ -146,24 +164,65 @@ class ResilientEmbedder:
         return self._fallback.embed(texts)
 
 
-def get_embedder() -> Embedder:
-    """Return the best available embedder.
+def _sentence_transformers_available() -> bool:
+    import importlib.util
 
-    Uses OpenAI when ``OPENAI_API_KEY`` is set and the package is importable, wrapped
-    so any runtime failure (quota, network) falls back to the local deterministic
-    embedder; otherwise uses the local embedder directly.
+    return importlib.util.find_spec("sentence_transformers") is not None
+
+
+def _make_sentence_transformer(model_name: str) -> Embedder | None:
+    try:
+        primary = SentenceTransformerEmbedder(model_name=model_name)
+        return ResilientEmbedder(primary=primary, fallback=LocalHashEmbedder())
+    except Exception as exc:  # noqa: BLE001 - any load failure -> try next backend
+        logger.warning("Sentence-transformers unavailable, skipping: %s", exc)
+        return None
+
+
+def _make_openai(model: str, api_key: str) -> Embedder | None:
+    try:
+        primary = OpenAIEmbedder(model=model, api_key=api_key)
+        return ResilientEmbedder(primary=primary, fallback=LocalHashEmbedder())
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def get_embedder() -> Embedder:
+    """Return the best available embedder per ``settings.embedding_backend``.
+
+    ``auto`` prefers a local semantic model (sentence-transformers) when installed,
+    then OpenAI (if a key is set and the circuit is closed), then the dependency-free
+    lexical embedder. The chosen backend is wrapped so any runtime failure falls back
+    to the local embedder, keeping the vector space consistent within a process.
     """
     from backend.config import get_settings
     from backend.llm import get_circuit
 
     settings = get_settings()
-    # Skip OpenAI while the circuit is tripped (recent quota/auth failure).
-    if settings.openai_api_key and get_circuit().is_available():
-        try:
-            primary = OpenAIEmbedder(
-                model=settings.openai_embedding_model, api_key=settings.openai_api_key
-            )
-            return ResilientEmbedder(primary=primary, fallback=LocalHashEmbedder())
-        except Exception:
-            pass
+    backend = (settings.embedding_backend or "auto").lower()
+    openai_ok = bool(settings.openai_api_key) and get_circuit().is_available()
+
+    if backend == "local":
+        return LocalHashEmbedder()
+
+    if backend == "sentence_transformers":
+        embedder = _make_sentence_transformer(settings.local_embedding_model)
+        return embedder or LocalHashEmbedder()
+
+    if backend == "openai":
+        if openai_ok:
+            embedder = _make_openai(settings.openai_embedding_model, settings.openai_api_key)
+            if embedder:
+                return embedder
+        return LocalHashEmbedder()
+
+    # auto: sentence-transformers -> openai -> local
+    if _sentence_transformers_available():
+        embedder = _make_sentence_transformer(settings.local_embedding_model)
+        if embedder:
+            return embedder
+    if openai_ok:
+        embedder = _make_openai(settings.openai_embedding_model, settings.openai_api_key)
+        if embedder:
+            return embedder
     return LocalHashEmbedder()

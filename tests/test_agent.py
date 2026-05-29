@@ -71,9 +71,10 @@ def test_agent_grounds_in_labs_and_knowledge(db_session: Session) -> None:
 def test_agent_blood_pressure_query_uses_vitals(db_session: Session) -> None:
     patient = _seed_patient(db_session)
     agent = RuleBasedAgent(db=db_session, retriever=_retriever())
-    resp = agent.chat(patient.id, "How is my blood pressure?")
+    resp = agent.chat(patient.id, "What is my blood pressure?")
+    # Targeted answer: just the reading, not the full multi-section summary.
     assert "145/92" in resp.answer
-    assert any(c.source == "hypertension.md" for c in resp.citations)
+    assert "LDL Cholesterol" not in resp.answer
 
 
 def test_agent_missing_patient(db_session: Session) -> None:
@@ -101,4 +102,31 @@ def test_agent_risk_query_uses_model(db_session: Session) -> None:
     resp = agent.chat(patient.id, "what is my risk of diabetes?")
     assert any(tc.tool == "get_risk_score" for tc in resp.tool_calls)
     assert "diabetes risk" in resp.answer.lower()
-    assert any(c.source == "type2_diabetes.md" for c in resp.citations)
+
+
+def test_agent_age_query_is_targeted(db_session: Session) -> None:
+    patient = _seed_patient(db_session)
+    agent = RuleBasedAgent(db=db_session, retriever=_retriever())
+    resp = agent.chat(patient.id, "what is my age?")
+    assert "55 years old" in resp.answer
+    # Targeted: it should NOT dump the labs paragraph for a demographics question.
+    assert "Labs outside" not in resp.answer
+    assert "LDL Cholesterol" not in resp.answer
+
+
+def test_agent_specific_lab_query_is_targeted(db_session: Session) -> None:
+    patient = _seed_patient(db_session)
+    agent = RuleBasedAgent(db=db_session, retriever=_retriever())
+    resp = agent.chat(patient.id, "what is my LDL?")
+    assert "LDL Cholesterol" in resp.answer
+    assert "180" in resp.answer
+    assert "above the typical reference range" in resp.answer.lower()
+    # No knowledge citation for a plain factual lookup.
+    assert resp.citations == []
+
+
+def test_agent_general_question_gives_summary(db_session: Session) -> None:
+    patient = _seed_patient(db_session)
+    agent = RuleBasedAgent(db=db_session, retriever=_retriever())
+    resp = agent.chat(patient.id, "how am I doing?")
+    assert "what your data shows" in resp.answer.lower()

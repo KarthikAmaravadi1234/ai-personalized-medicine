@@ -10,6 +10,7 @@ and falls back to the rule-based agent otherwise.
 from __future__ import annotations
 
 import logging
+import re
 from dataclasses import dataclass, field
 
 from sqlalchemy.orm import Session
@@ -62,6 +63,35 @@ _TOPIC_HINTS = {
     "weight": "body mass index weight",
 }
 
+# Knowledge hits below this similarity are treated as irrelevant and not cited.
+_KNOWLEDGE_MIN_SCORE = 0.1
+
+# Phrases that signal the user wants an explanation/advice, not just a value.
+_EXPLAIN_TRIGGERS = (
+    "mean", "meaning", "why", "explain", "cause", "how do", "how can", "how to",
+    "tell me about", "what should", "lower", "raise", "reduce", "improve", "manage",
+)
+
+# Word-boundary patterns for demographic fields (avoid substrings like "age" in "manage").
+_DEMO_PATTERNS: dict[str, re.Pattern[str]] = {
+    "age": re.compile(r"\b(age|how old|years old)\b"),
+    "sex": re.compile(r"\b(sex|gender)\b"),
+    "height": re.compile(r"\b(height|how tall|tall)\b"),
+    "weight": re.compile(r"\b(weight|weigh|weighs)\b"),
+}
+
+# Question keyword -> fragment that should appear in the matching lab's test name.
+_LAB_KEYWORDS = {
+    "ldl": "ldl",
+    "hdl": "hdl",
+    "triglyceride": "triglyceride",
+    "a1c": "a1c",
+    "hba1c": "a1c",
+    "glucose": "glucose",
+    "sugar": "glucose",
+    "cholesterol": "cholesterol",
+}
+
 
 class RuleBasedAgent:
     def __init__(self, db: Session, retriever: Retriever) -> None:
@@ -80,8 +110,10 @@ class RuleBasedAgent:
         wants_vitals = any(w in lowered for w in ("vital", "blood pressure", "heart rate", "pulse", "sleep", "steps"))
         wants_bmi = any(w in lowered for w in ("bmi", "weight", "body mass"))
         wants_risk = any(w in lowered for w in ("risk", "diabet", "chance", "likelihood", "likely"))
-        # Default to showing labs when the question is generic ("how am I doing?").
-        if not (wants_labs or wants_vitals or wants_bmi or wants_risk):
+        wants_demographics = any(p.search(lowered) for p in _DEMO_PATTERNS.values())
+        # Default to showing labs only for a generic question ("how am I doing?"),
+        # never when the user asked about a demographic field like age.
+        if not (wants_labs or wants_vitals or wants_bmi or wants_risk or wants_demographics):
             wants_labs = True
 
         if wants_labs:
@@ -120,7 +152,9 @@ class RuleBasedAgent:
 
         query = self._knowledge_query(lowered, ctx, wants_risk=wants_risk)
         if query:
-            ctx.knowledge_hits = tools.search_knowledge(self.retriever, query, top_k=3)
+            hits = tools.search_knowledge(self.retriever, query, top_k=3)
+            # Drop weakly-related hits so the agent never cites an off-topic document.
+            ctx.knowledge_hits = [h for h in hits if h.score >= _KNOWLEDGE_MIN_SCORE]
             ctx.tool_calls.append(
                 ToolCall("search_knowledge", {"query": query}, f"{len(ctx.knowledge_hits)} hits")
             )
@@ -171,7 +205,134 @@ class RuleBasedAgent:
         abnormal = [lab.test_name for lab in ctx.labs if lab.flag != "normal"]
         return "; ".join(abnormal) if abnormal else ""
 
+    @staticmethod
+    def _detect_intent(lowered: str) -> str:
+        """Classify the question so the answer targets exactly what was asked."""
+        if any(t in lowered for t in _EXPLAIN_TRIGGERS):
+            return "explain"
+        if any(p.search(lowered) for p in _DEMO_PATTERNS.values()):
+            return "demographics"
+        if "bmi" in lowered or "body mass" in lowered:
+            return "bmi"
+        if any(k in lowered for k in _LAB_KEYWORDS) or "lab" in lowered:
+            return "specific_lab"
+        if any(w in lowered for w in ("blood pressure", "bp", "heart rate", "pulse", "sleep", "steps", "vital")):
+            return "vitals"
+        if any(w in lowered for w in ("risk", "diabet", "chance", "likelihood", "likely")):
+            return "risk"
+        return "general"
+
     def _compose(self, ctx: GatheredContext, message: str) -> tuple[str, list[Citation]]:
+        lowered = message.lower()
+        intent = self._detect_intent(lowered)
+
+        if intent == "demographics":
+            answer = self._answer_demographics(lowered, ctx)
+            if answer:
+                return answer, []
+        elif intent == "bmi":
+            if ctx.bmi is not None:
+                return f"Your BMI is approximately {ctx.bmi} ({bmi_category(ctx.bmi)}).", []
+        elif intent == "specific_lab":
+            answer = self._answer_specific_lab(lowered, ctx)
+            if answer:
+                return answer, []
+        elif intent == "vitals":
+            answer = self._answer_vitals(lowered, ctx)
+            if answer:
+                return answer, []
+        elif intent == "risk":
+            if ctx.risk is not None:
+                return self._risk_sentence(ctx.risk), []
+        elif intent == "explain":
+            return self._answer_explain(message, lowered, ctx)
+
+        # Generic question, or a targeted answer we couldn't build: full summary.
+        return self._full_summary(ctx)
+
+    def _answer_demographics(self, lowered: str, ctx: GatheredContext) -> str | None:
+        p = ctx.patient
+        bits: list[str] = []
+        if _DEMO_PATTERNS["age"].search(lowered) and p.age is not None:
+            bits.append(f"You are {p.age} years old.")
+        if _DEMO_PATTERNS["sex"].search(lowered):
+            sex = getattr(p.sex, "value", p.sex)
+            if sex and sex != "unknown":
+                bits.append(f"Your recorded sex is {sex}.")
+        if _DEMO_PATTERNS["height"].search(lowered) and p.height_cm:
+            bits.append(f"Your recorded height is {p.height_cm} cm.")
+        if _DEMO_PATTERNS["weight"].search(lowered) and p.weight_kg:
+            bits.append(f"Your recorded weight is {p.weight_kg} kg.")
+        return " ".join(bits) if bits else None
+
+    def _answer_specific_lab(self, lowered: str, ctx: GatheredContext) -> str | None:
+        if not ctx.labs:
+            return None
+        fragments = {frag for kw, frag in _LAB_KEYWORDS.items() if kw in lowered}
+        if not fragments:
+            return None
+        matched = [
+            lab for lab in ctx.labs
+            if any(frag in lab.test_name.lower() for frag in fragments)
+        ]
+        if not matched:
+            return None
+        return " ".join(
+            f"Your {lab.test_name} is {lab.value}{lab.unit or ''}, {_range_phrase(lab)}."
+            for lab in matched
+        )
+
+    def _answer_vitals(self, lowered: str, ctx: GatheredContext) -> str | None:
+        if not ctx.vitals:
+            return None
+        v = ctx.vitals[-1]
+        if ("blood pressure" in lowered or "bp" in lowered) and v.systolic_bp and v.diastolic_bp:
+            return f"Your most recent blood pressure is {v.systolic_bp}/{v.diastolic_bp} mmHg."
+        if any(w in lowered for w in ("heart rate", "pulse", "bpm")) and v.heart_rate:
+            return f"Your most recent heart rate is {v.heart_rate} bpm."
+        if "sleep" in lowered and v.sleep_hours is not None:
+            return f"You recently slept {v.sleep_hours} hours."
+        if "steps" in lowered and v.steps is not None:
+            return f"Your recent step count is {v.steps}."
+        bits: list[str] = []
+        if v.systolic_bp and v.diastolic_bp:
+            bits.append(f"blood pressure {v.systolic_bp}/{v.diastolic_bp} mmHg")
+        if v.heart_rate:
+            bits.append(f"heart rate {v.heart_rate} bpm")
+        return ("Your most recent vitals: " + ", ".join(bits) + ".") if bits else None
+
+    @staticmethod
+    def _risk_sentence(risk) -> str:
+        drivers = ", ".join(c.feature for c in risk.contributions[:2])
+        pct = round(risk.probability * 100)
+        return (
+            f"A baseline model estimates your type 2 diabetes risk as {risk.risk_level} "
+            f"(about {pct}%), driven mainly by {drivers}. This is a statistical estimate "
+            f"from an educational model, not a diagnosis."
+        )
+
+    def _answer_explain(
+        self, message: str, lowered: str, ctx: GatheredContext
+    ) -> tuple[str, list[Citation]]:
+        parts: list[str] = []
+        # Anchor the explanation in the user's own value when a metric is referenced.
+        value = self._answer_specific_lab(lowered, ctx) or self._answer_vitals(lowered, ctx)
+        if value:
+            parts.append(value)
+
+        citations: list[Citation] = []
+        if ctx.knowledge_hits:
+            citations = [_to_citation(h) for h in ctx.knowledge_hits]
+            sources = ", ".join(sorted({c.source for c in citations}))
+            best = _best_sentence(ctx.knowledge_hits[0].text, message, self.retriever.embedder)
+            parts.append(f"From the knowledge base ({sources}): {best}")
+        elif not parts:
+            parts.append(
+                "I couldn't find a relevant explanation in the knowledge base for that."
+            )
+        return " ".join(parts), citations
+
+    def _full_summary(self, ctx: GatheredContext) -> tuple[str, list[Citation]]:
         parts: list[str] = []
         name = ctx.patient.name or f"patient {ctx.patient.id}"
         parts.append(f"Here is what your data shows, {name}:")
@@ -202,27 +363,16 @@ class RuleBasedAgent:
             parts.append(f"Your BMI is approximately {ctx.bmi} ({bmi_category(ctx.bmi)}).")
 
         if ctx.risk is not None:
-            top = ctx.risk.contributions[:2]
-            drivers = ", ".join(c.feature for c in top)
-            pct = round(ctx.risk.probability * 100)
-            parts.append(
-                f"A baseline model estimates your type 2 diabetes risk as {ctx.risk.risk_level} "
-                f"(about {pct}%), driven mainly by {drivers}. This is a statistical estimate "
-                f"from an educational model, not a diagnosis."
-            )
+            parts.append(self._risk_sentence(ctx.risk))
 
         if ctx.patient_hits:
-            top = ctx.patient_hits[0]
-            parts.append(f"Most relevant to your question: {_excerpt(top.text)}")
+            parts.append(f"Most relevant to your question: {_excerpt(ctx.patient_hits[0].text)}")
 
         citations: list[Citation] = []
         if ctx.knowledge_hits:
             citations = [_to_citation(h) for h in ctx.knowledge_hits]
             sources = ", ".join(sorted({c.source for c in citations}))
-            top = ctx.knowledge_hits[0]
-            parts.append(
-                f"From the knowledge base ({sources}): {_excerpt(top.text)}"
-            )
+            parts.append(f"From the knowledge base ({sources}): {_excerpt(ctx.knowledge_hits[0].text)}")
 
         return " ".join(parts), citations
 
@@ -346,6 +496,43 @@ def _to_citation(hit: SearchHit) -> Citation:
 def _excerpt(text: str, max_chars: int = 240) -> str:
     text = text.strip()
     return text if len(text) <= max_chars else text[: max_chars - 1].rstrip() + "\u2026"
+
+
+def _range_phrase(lab) -> str:
+    if lab.flag == "high":
+        return "above the typical reference range"
+    if lab.flag == "low":
+        return "below the typical reference range"
+    return "within the typical reference range"
+
+
+_SENTENCE_SPLIT_RE = re.compile(r"(?<=[.!?])\s+")
+
+
+def _split_sentences(text: str) -> list[str]:
+    return [s.strip() for s in _SENTENCE_SPLIT_RE.split(text.strip()) if s.strip()]
+
+
+def _best_sentence(text: str, query: str, embedder) -> str:
+    """Return the single sentence in ``text`` most relevant to ``query``.
+
+    Keeps knowledge excerpts crisp (the responsive sentence, not a 120-word chunk).
+    Uses the active embedder for similarity; falls back to the whole excerpt on any
+    issue so a phrasing detail never breaks a response.
+    """
+    sentences = _split_sentences(text)
+    if len(sentences) <= 1:
+        return _excerpt(text)
+    try:
+        vectors = embedder.embed([*sentences, query])
+        query_vec = vectors[-1]
+        scored = max(
+            range(len(sentences)),
+            key=lambda i: sum(a * b for a, b in zip(vectors[i], query_vec)),
+        )
+        return _excerpt(sentences[scored])
+    except Exception:  # noqa: BLE001 - never let excerpt selection fail a response
+        return _excerpt(text)
 
 
 def get_agent(db: Session, retriever: Retriever) -> RuleBasedAgent:

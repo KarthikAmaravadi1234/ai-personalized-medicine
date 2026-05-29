@@ -4,6 +4,9 @@ from collections.abc import Generator
 # Keep the test suite hermetic: never make real OpenAI calls even if a key is in .env.
 # Blank the key before settings are first read so agent/embedder use offline paths.
 os.environ["OPENAI_API_KEY"] = ""
+# Force the dependency-free lexical embedder so tests stay fast, deterministic, and
+# never download a model even if sentence-transformers happens to be installed.
+os.environ["EMBEDDING_BACKEND"] = "local"
 
 import pytest
 from fastapi.testclient import TestClient

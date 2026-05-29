@@ -260,6 +260,20 @@ python scripts/fetch_knowledge.py --topics data/knowledge_topics.json --reindex
   pollutes embeddings. Re-index with `--reindex` or `POST /knowledge/reindex`.
 - Optional `beautifulsoup4` (the `data` extra) enables richer HTML cleaning.
 
+### Embedding backends
+
+Retrieval quality depends on the embedder, selected via `EMBEDDING_BACKEND`
+(`auto` | `sentence_transformers` | `openai` | `local`; default `auto`):
+
+- `local` — dependency-free lexical (hashing + IDF). Always available; modest accuracy.
+- `sentence_transformers` — local semantic model (accurate, offline). Install with
+  `pip install -e ".[embeddings]"`; the first run downloads `all-MiniLM-L6-v2` (~90MB).
+- `openai` — OpenAI embeddings (needs `OPENAI_API_KEY` and quota).
+- `auto` — prefers `sentence_transformers` when installed, then OpenAI, then `local`.
+
+Switching backends changes the vector space, so restart the API (or `POST
+/knowledge/reindex`) afterward to rebuild the index.
+
 > This corpus is assembled for educational use only and is not medical advice. Respect each
 > source's license; Wikipedia content remains under CC BY-SA 4.0 (see `ATTRIBUTION.md`).
 

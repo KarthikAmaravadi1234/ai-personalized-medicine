@@ -30,3 +30,7 @@ pdfplumber>=0.11.0
 
 # Data tooling ([project.optional-dependencies].data) — optional, for fetch_knowledge.py
 # beautifulsoup4>=4.12.0
+
+# Local semantic embeddings ([project.optional-dependencies].embeddings) — optional
+# Accurate offline RAG; first run downloads a ~90MB model, then runs offline.
+# sentence-transformers>=3.0.0
