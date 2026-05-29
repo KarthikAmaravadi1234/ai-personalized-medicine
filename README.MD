@@ -224,6 +224,47 @@ API docs are available at `http://localhost:8000/docs` once the server is runnin
 
 ---
 
+## Data tooling
+
+### Synthetic patient data
+
+`scripts/generate_synthetic_patients.py` produces clinically *correlated* fake patients: a
+shared latent metabolic-risk factor drives glucose, HbA1c, lipids, BMI, and blood pressure
+together (HDL inversely), with derived condition labels and optional longitudinal visits.
+
+```bash
+# Generate 40 patients, 3 visits each, reproducible
+python scripts/generate_synthetic_patients.py --count 40 --seed 7 --visits 3
+# Outputs: data/synthetic/{patients.json, patients.csv, cohort_labeled.csv}
+
+# Load them into the database (so the API + web UI show realistic data)
+python scripts/seed_db.py --clear
+```
+
+`cohort_labeled.csv` holds the ML feature columns (`age, bmi, fasting_glucose, hba1c, ldl,
+systolic_bp`) plus a `diabetes_label`, aligned with `backend/ml/features.py`.
+
+### Knowledge base (RAG corpus)
+
+`scripts/fetch_knowledge.py` pulls attributed content from open sources into
+`data/knowledge/<slug>.md` (with YAML frontmatter provenance), plus a `manifest.json` and
+`ATTRIBUTION.md`. It is a manual, network-using tool; the app and tests stay offline.
+
+```bash
+python scripts/fetch_knowledge.py --topics data/knowledge_topics.json --reindex
+```
+
+- Sources: `wikipedia` (CC BY-SA 4.0, default, plain-text extracts) and `medlineplus`
+  (U.S. NLM, largely public domain). Edit `data/knowledge_topics.json` to add topics.
+- The retriever strips the frontmatter before chunking, so provenance metadata never
+  pollutes embeddings. Re-index with `--reindex` or `POST /knowledge/reindex`.
+- Optional `beautifulsoup4` (the `data` extra) enables richer HTML cleaning.
+
+> This corpus is assembled for educational use only and is not medical advice. Respect each
+> source's license; Wikipedia content remains under CC BY-SA 4.0 (see `ATTRIBUTION.md`).
+
+---
+
 ## Key Design Principles
 
 1. **Python everywhere** — backend, ML, agents, and UI all in one language.

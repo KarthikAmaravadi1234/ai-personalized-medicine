@@ -1,0 +1,16 @@
+{
+  "description": "Topics fetched into the RAG knowledge base by scripts/fetch_knowledge.py.",
+  "topics": [
+    { "slug": "ldl_cholesterol", "title": "Low-density lipoprotein", "query": "LDL cholesterol", "source": "wikipedia" },
+    { "slug": "hdl_cholesterol", "title": "High-density lipoprotein", "query": "HDL cholesterol", "source": "wikipedia" },
+    { "slug": "total_cholesterol", "title": "Cholesterol", "query": "cholesterol", "source": "wikipedia" },
+    { "slug": "triglycerides", "title": "Triglyceride", "query": "triglycerides", "source": "wikipedia" },
+    { "slug": "hba1c", "title": "Glycated hemoglobin", "query": "A1C", "source": "wikipedia" },
+    { "slug": "fasting_glucose", "title": "Blood sugar level", "query": "blood glucose", "source": "wikipedia" },
+    { "slug": "type2_diabetes", "title": "Type 2 diabetes", "query": "type 2 diabetes", "source": "wikipedia" },
+    { "slug": "hypertension", "title": "Hypertension", "query": "high blood pressure", "source": "wikipedia" },
+    { "slug": "bmi", "title": "Body mass index", "query": "body mass index", "source": "wikipedia" },
+    { "slug": "obesity", "title": "Obesity", "query": "obesity", "source": "wikipedia" },
+    { "slug": "metabolic_syndrome", "title": "Metabolic syndrome", "query": "metabolic syndrome", "source": "wikipedia" }
+  ]
+}

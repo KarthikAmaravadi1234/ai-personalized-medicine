@@ -1,0 +1,43 @@
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap");
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    font-family: "Inter", sans-serif;
+  }
+  body {
+    @apply text-slate-900 antialiased dark:text-slate-100;
+  }
+}
+
+/* App background with soft brand gradient washes */
+.app-bg {
+  background:
+    radial-gradient(1200px 600px at 100% -10%, rgba(99, 102, 241, 0.1), transparent 60%),
+    radial-gradient(1000px 500px at -10% 10%, rgba(6, 182, 212, 0.1), transparent 55%),
+    #f7f8fc;
+}
+.dark .app-bg {
+  background:
+    radial-gradient(1200px 600px at 100% -10%, rgba(99, 102, 241, 0.22), transparent 60%),
+    radial-gradient(1000px 500px at -10% 10%, rgba(6, 182, 212, 0.14), transparent 55%),
+    #0b1020;
+}
+
+/* Gradient text helper */
+.text-gradient {
+  @apply bg-gradient-to-r from-brand-indigo via-brand-violet to-brand-cyan bg-clip-text text-transparent;
+}
+
+/* Thin custom scrollbar */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(100, 116, 139, 0.35);
+  border-radius: 999px;
+}
