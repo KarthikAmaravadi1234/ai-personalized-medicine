@@ -7,6 +7,8 @@ class Settings(BaseSettings):
     database_url: str = "postgresql://postgres:postgres@localhost:5432/personalized_medicine"
     openai_api_key: str = ""
     anthropic_api_key: str = ""
+    openai_model: str = "gpt-4o-mini"
+    openai_embedding_model: str = "text-embedding-3-small"
     api_host: str = "0.0.0.0"
     api_port: int = 8000
 

@@ -47,11 +47,24 @@ def root() -> dict[str, str]:
 
 
 @app.get("/health")
-def health() -> dict[str, str]:
+def health() -> dict[str, object]:
+    from backend.config import get_settings
+    from backend.llm import get_circuit
+
     db_ok = check_connection()
+    settings = get_settings()
+    circuit = get_circuit()
+    if not settings.openai_api_key:
+        llm_mode = "local"  # no key configured
+    elif circuit.is_available():
+        llm_mode = "openai"
+    else:
+        llm_mode = "local_fallback"  # key set but OpenAI temporarily disabled
     return {
         "status": "healthy" if db_ok else "degraded",
         "database": "connected" if db_ok else "unavailable",
+        "llm_mode": llm_mode,
+        "openai": circuit.status(),
     }
 
 

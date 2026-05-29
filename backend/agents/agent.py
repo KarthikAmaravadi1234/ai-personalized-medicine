@@ -1,21 +1,27 @@
 """The health agent.
 
-``RuleBasedAgent`` is the default: it performs real tool-calling over the patient's
-data and the knowledge base, with no LLM, so it runs and tests offline. ``get_agent``
-exposes a seam to swap in an LLM-backed agent (e.g. LangGraph + OpenAI) later.
+``RuleBasedAgent`` is the offline default: it performs real tool-calling over the
+patient's data and the knowledge base with no LLM, so it runs and tests offline.
+``OpenAIAgent`` reuses the same grounding + guardrails but lets GPT phrase the answer.
+``get_agent`` selects the LLM agent when a key and the ``openai`` package are available,
+and falls back to the rule-based agent otherwise.
 """
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
 
 from sqlalchemy.orm import Session
 
 from backend.agents import tools
 from backend.agents.guardrails import apply_guardrails
+from backend.agents.prompts import SYSTEM_PROMPT
 from backend.agents.tools import GatheredContext, ToolCall, bmi_category
 from backend.rag.retriever import Retriever
 from backend.rag.store import SearchHit
+
+logger = logging.getLogger(__name__)
 
 
 class PatientNotFoundError(Exception):
@@ -182,9 +188,100 @@ class RuleBasedAgent:
 
         return " ".join(parts), citations
 
+    def _context_block(self, ctx: GatheredContext) -> str:
+        """A compact, factual summary of gathered data for an LLM prompt."""
+        lines: list[str] = []
+        p = ctx.patient
+        sex = getattr(p.sex, "value", p.sex) or "unknown"
+        lines.append(
+            f"Patient: name={p.name or 'unknown'}, sex={sex}, "
+            f"age={p.age}, height_cm={p.height_cm}, weight_kg={p.weight_kg}"
+        )
+        if ctx.labs:
+            lines.append("Labs:")
+            for lab in ctx.labs:
+                lines.append(
+                    f"  - {lab.test_name}: {lab.value}{lab.unit or ''} ({lab.flag})"
+                )
+        if ctx.vitals:
+            v = ctx.vitals[-1]
+            lines.append(
+                f"Latest vitals: bp={v.systolic_bp}/{v.diastolic_bp} mmHg, hr={v.heart_rate}, "
+                f"sleep_hours={v.sleep_hours}"
+            )
+        if ctx.bmi is not None:
+            lines.append(f"BMI: {ctx.bmi} ({bmi_category(ctx.bmi)})")
+        if ctx.risk is not None:
+            drivers = ", ".join(c.feature for c in ctx.risk.contributions[:3])
+            lines.append(
+                f"Model diabetes-risk estimate: {ctx.risk.risk_level} "
+                f"(p={ctx.risk.probability}); top drivers: {drivers}"
+            )
+        if ctx.knowledge_hits:
+            lines.append("Knowledge sources (cite these):")
+            for h in ctx.knowledge_hits:
+                lines.append(f"  - [{h.source}] {_excerpt(h.text)}")
+        return "\n".join(lines)
+
     def chat(self, patient_id: int, message: str) -> AgentResponse:
         ctx = self._gather(patient_id, message)
         answer, citations = self._compose(ctx, message)
+        guarded = apply_guardrails(answer, has_citations=bool(citations))
+        return AgentResponse(
+            patient_id=patient_id,
+            answer=guarded.text,
+            citations=citations,
+            tool_calls=ctx.tool_calls,
+            guardrail_notes=guarded.notes,
+        )
+
+
+class OpenAIAgent(RuleBasedAgent):
+    """Uses the same tools/grounding as the rule-based agent, but GPT writes the answer.
+
+    Falls back to the rule-based composition if the API call fails for any reason.
+    """
+
+    def __init__(self, db: Session, retriever: Retriever, *, api_key: str, model: str) -> None:
+        super().__init__(db=db, retriever=retriever)
+        from openai import OpenAI
+
+        self.model = model
+        # Fail fast (one retry) so a quota/auth error degrades to local quickly.
+        self._client = OpenAI(api_key=api_key, max_retries=1)
+
+    def chat(self, patient_id: int, message: str) -> AgentResponse:
+        ctx = self._gather(patient_id, message)
+        citations = [_to_citation(h) for h in ctx.knowledge_hits]
+
+        try:
+            user_prompt = (
+                f"Patient data and sources:\n{self._context_block(ctx)}\n\n"
+                f"User question: {message}\n\n"
+                "Answer using only the data and sources above. Cite knowledge sources by "
+                "their bracketed filename. Keep it concise."
+            )
+            completion = self._client.chat.completions.create(
+                model=self.model,
+                temperature=0.2,
+                messages=[
+                    {"role": "system", "content": SYSTEM_PROMPT},
+                    {"role": "user", "content": user_prompt},
+                ],
+            )
+            answer = completion.choices[0].message.content or ""
+            ctx.tool_calls.append(
+                ToolCall("llm_generate", {"model": self.model}, "openai chat completion")
+            )
+        except Exception as exc:  # graceful fallback to the offline composition
+            from backend.llm import get_circuit, is_quota_or_auth_error
+
+            if is_quota_or_auth_error(exc):
+                # Quota/auth/rate problem: stop calling OpenAI for a while.
+                get_circuit().trip(str(exc))
+            logger.warning("OpenAI call failed, falling back to rule-based agent: %s", exc)
+            answer, citations = self._compose(ctx, message)
+
         guarded = apply_guardrails(answer, has_citations=bool(citations))
         return AgentResponse(
             patient_id=patient_id,
@@ -212,7 +309,22 @@ def _excerpt(text: str, max_chars: int = 240) -> str:
 def get_agent(db: Session, retriever: Retriever) -> RuleBasedAgent:
     """Return the configured agent.
 
-    Currently always the offline rule-based agent. When an LLM backend is added,
-    select it here based on ``settings.openai_api_key`` and package availability.
+    Uses ``OpenAIAgent`` when a key is set and the ``openai`` package is importable;
+    otherwise falls back to the offline rule-based agent.
     """
+    from backend.config import get_settings
+    from backend.llm import get_circuit
+
+    settings = get_settings()
+    # Skip OpenAI entirely while the circuit is tripped (recent quota/auth failure).
+    if settings.openai_api_key and get_circuit().is_available():
+        try:
+            return OpenAIAgent(
+                db=db,
+                retriever=retriever,
+                api_key=settings.openai_api_key,
+                model=settings.openai_model,
+            )
+        except Exception as exc:  # noqa: BLE001 - any setup failure -> safe fallback
+            logger.warning("Falling back to rule-based agent: %s", exc)
     return RuleBasedAgent(db=db, retriever=retriever)
