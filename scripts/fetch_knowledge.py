@@ -103,8 +103,39 @@ def html_to_text(html: str) -> str:
     return re.sub(r"\n{3,}", "\n\n", parser.text()).strip()
 
 
+def strip_math_markup(text: str) -> str:
+    """Remove LaTeX/MathML noise that Wikipedia plain-text extracts leave behind.
+
+    Two artifacts appear: balanced ``{\\displaystyle ...}`` / ``{\\textstyle ...}`` LaTeX
+    blocks, and the rendered formula written as a long run of single characters
+    (e.g. ``I F C C H B A 1 c ( ...``). Both are unreadable in an excerpt.
+    """
+    out: list[str] = []
+    i, n = 0, len(text)
+    while i < n:
+        if text.startswith("{\\displaystyle", i) or text.startswith("{\\textstyle", i):
+            depth = 0
+            while i < n:
+                if text[i] == "{":
+                    depth += 1
+                elif text[i] == "}":
+                    depth -= 1
+                    if depth == 0:
+                        i += 1
+                        break
+                i += 1
+        else:
+            out.append(text[i])
+            i += 1
+    cleaned = "".join(out)
+    # Collapse long runs of space-separated single-character tokens (rendered formulas).
+    cleaned = re.sub(r"(?:(?<=\s)|^)(?:\S ){4,}\S?", " ", cleaned)
+    return re.sub(r"[ \t]{2,}", " ", cleaned)
+
+
 def wiki_sections_to_markdown(text: str, *, max_words: int | None = 1200) -> str:
     """Convert Wikipedia plain-text section markers (== X ==) to markdown headers."""
+    text = strip_math_markup(text)
     lines: list[str] = []
     for raw in text.splitlines():
         m = re.match(r"^(=+)\s*(.*?)\s*=+\s*$", raw.strip())

@@ -7,6 +7,7 @@ that uses real embeddings when an API key and the ``openai`` package are availab
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import math
 import re
@@ -42,14 +43,45 @@ class LocalHashEmbedder:
     captures lexical overlap well enough for small corpora and keeps tests offline.
     """
 
-    def __init__(self, dim: int = 256) -> None:
+    def __init__(self, dim: int = 512) -> None:
         self.dim = dim
+        # Optional per-bucket inverse-document-frequency weights, set by ``fit``.
+        self._idf: list[float] | None = None
+
+    def _bucket(self, token: str) -> int:
+        # Use a stable hash (not Python's salted ``hash()``) so embeddings are
+        # identical across processes; otherwise stored vectors and later query
+        # vectors would land in different buckets and retrieval would be unreliable.
+        digest = hashlib.blake2b(token.encode("utf-8"), digest_size=8).digest()
+        return int.from_bytes(digest, "big") % self.dim
+
+    def fit(self, corpus: list[str]) -> "LocalHashEmbedder":
+        """Learn IDF weights so corpus-wide common words are down-weighted.
+
+        Without this, raw term frequency lets generic words dominate similarity on a
+        broad corpus; IDF lets topic-specific terms (e.g. "hba1c") drive retrieval.
+        """
+        n = len(corpus)
+        if n == 0:
+            self._idf = None
+            return self
+        doc_freq = [0] * self.dim
+        for text in corpus:
+            seen: set[int] = set()
+            for token in tokenize(text):
+                bucket = self._bucket(token)
+                if bucket not in seen:
+                    doc_freq[bucket] += 1
+                    seen.add(bucket)
+        self._idf = [math.log((1 + n) / (1 + df)) + 1.0 for df in doc_freq]
+        return self
 
     def _embed_one(self, text: str) -> list[float]:
         vector = [0.0] * self.dim
         for token in tokenize(text):
-            bucket = hash((self.dim, token)) % self.dim
-            vector[bucket] += 1.0
+            vector[self._bucket(token)] += 1.0
+        if self._idf is not None:
+            vector = [v * self._idf[i] for i, v in enumerate(vector)]
         return _l2_normalize(vector)
 
     def embed(self, texts: list[str]) -> list[list[float]]:
@@ -88,6 +120,14 @@ class ResilientEmbedder:
         self._fallback = fallback
         self._active = primary
         self.dim = primary.dim
+
+    def fit(self, corpus: list[str]) -> "ResilientEmbedder":
+        # Only IDF-style backends implement ``fit``; OpenAI embeddings ignore it.
+        for emb in (self._primary, self._fallback):
+            fit = getattr(emb, "fit", None)
+            if callable(fit):
+                fit(corpus)
+        return self
 
     def embed(self, texts: list[str]) -> list[list[float]]:
         if self._active is self._primary:

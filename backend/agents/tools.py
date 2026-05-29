@@ -100,5 +100,6 @@ class GatheredContext:
     vitals: list[Vital] = field(default_factory=list)
     bmi: float | None = None
     knowledge_hits: list[SearchHit] = field(default_factory=list)
+    patient_hits: list[SearchHit] = field(default_factory=list)
     risk: "RiskPrediction | None" = None
     tool_calls: list[ToolCall] = field(default_factory=list)

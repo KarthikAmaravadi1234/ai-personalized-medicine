@@ -124,15 +124,49 @@ class RuleBasedAgent:
             ctx.tool_calls.append(
                 ToolCall("search_knowledge", {"query": query}, f"{len(ctx.knowledge_hits)} hits")
             )
+
+        # Semantic retrieval over this patient's own records, so free-form questions
+        # surface the most relevant facts even when keyword gating did not load them.
+        ctx.patient_hits = self._search_patient_record(patient_id, patient, message, ctx)
+        ctx.tool_calls.append(
+            ToolCall(
+                "search_patient_record",
+                {"patient_id": patient_id},
+                f"{len(ctx.patient_hits)} patient facts",
+            )
+        )
         return ctx
+
+    def _search_patient_record(
+        self, patient_id: int, patient, message: str, ctx: GatheredContext
+    ) -> list[SearchHit]:
+        """Build a fresh, patient-scoped vector index and return the closest facts."""
+        from backend.rag.patient_docs import build_patient_documents
+
+        # Use whatever the keyword pass already loaded; otherwise fetch the full record
+        # so the patient index is complete regardless of the question's wording.
+        labs = ctx.labs or tools.get_patient_labs(self.db, patient_id)
+        vitals = ctx.vitals or tools.get_patient_vitals(self.db, patient_id)
+        bmi = ctx.bmi if ctx.bmi is not None else tools.calculate_bmi(
+            patient.height_cm, patient.weight_kg
+        )
+        docs = build_patient_documents(patient, labs, vitals, bmi, ctx.risk)
+        return self.retriever.search_documents(message, docs, top_k=3)
 
     @staticmethod
     def _knowledge_query(lowered: str, ctx: GatheredContext, *, wants_risk: bool = False) -> str:
         hints = [hint for key, hint in _TOPIC_HINTS.items() if key in lowered]
         if wants_risk:
             hints.append("type 2 diabetes")
+        # Drop a hint when a more specific one already contains it (e.g. keep
+        # "LDL cholesterol" and drop the generic "cholesterol") so the query is not
+        # diluted toward broader documents.
+        hints = [
+            h for h in dict.fromkeys(hints)
+            if not any(other != h and h in other for other in hints)
+        ]
         if hints:
-            return "; ".join(dict.fromkeys(hints))
+            return "; ".join(hints)
         # Fall back to topics implied by abnormal labs so answers stay grounded.
         abnormal = [lab.test_name for lab in ctx.labs if lab.flag != "normal"]
         return "; ".join(abnormal) if abnormal else ""
@@ -177,6 +211,10 @@ class RuleBasedAgent:
                 f"from an educational model, not a diagnosis."
             )
 
+        if ctx.patient_hits:
+            top = ctx.patient_hits[0]
+            parts.append(f"Most relevant to your question: {_excerpt(top.text)}")
+
         citations: list[Citation] = []
         if ctx.knowledge_hits:
             citations = [_to_citation(h) for h in ctx.knowledge_hits]
@@ -217,6 +255,10 @@ class RuleBasedAgent:
                 f"Model diabetes-risk estimate: {ctx.risk.risk_level} "
                 f"(p={ctx.risk.probability}); top drivers: {drivers}"
             )
+        if ctx.patient_hits:
+            lines.append("Most relevant patient facts (semantic match):")
+            for h in ctx.patient_hits:
+                lines.append(f"  - [{h.source}] {_excerpt(h.text)}")
         if ctx.knowledge_hits:
             lines.append("Knowledge sources (cite these):")
             for h in ctx.knowledge_hits:

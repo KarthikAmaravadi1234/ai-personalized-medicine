@@ -38,6 +38,19 @@ def test_wiki_sections_to_markdown():
     assert "==" not in out
 
 
+def test_strip_math_markup_removes_latex_block():
+    raw = "Equation: {\\displaystyle \\mathrm {HbA1c} =[x]\\times 10.9} Interpretation follows."
+    out = fk.strip_math_markup(raw)
+    assert "\\displaystyle" not in out
+    assert "mathrm" not in out
+    assert "Interpretation follows." in out
+
+
+def test_strip_math_markup_keeps_prose():
+    prose = "HbA1c reflects average blood glucose over three months."
+    assert fk.strip_math_markup(prose) == prose
+
+
 def test_fetch_wikipedia(monkeypatch):
     monkeypatch.setattr(fk, "_http_get", lambda url, params=None: WIKI_JSON)
     result = fk.fetch_wikipedia("Glycated hemoglobin")
