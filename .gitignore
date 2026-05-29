@@ -34,6 +34,7 @@ data/synthetic/*.json
 *.pkl
 *.joblib
 chroma_data/
+data/knowledge_index.json
 
 # OS
 .DS_Store
