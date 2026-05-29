@@ -1,0 +1,26 @@
+[
+  {
+    "query": "What does elevated LDL cholesterol mean?",
+    "expected_sources": ["ldl_cholesterol.md"]
+  },
+  {
+    "query": "How can I raise my HDL cholesterol?",
+    "expected_sources": ["hdl_cholesterol.md"]
+  },
+  {
+    "query": "What is a normal HbA1c percentage?",
+    "expected_sources": ["hba1c.md"]
+  },
+  {
+    "query": "What are the risk factors for type 2 diabetes?",
+    "expected_sources": ["type2_diabetes.md"]
+  },
+  {
+    "query": "How do I lower my blood pressure?",
+    "expected_sources": ["hypertension.md"]
+  },
+  {
+    "query": "What blood pressure reading counts as stage 2 hypertension?",
+    "expected_sources": ["hypertension.md"]
+  }
+]

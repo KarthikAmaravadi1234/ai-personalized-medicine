@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from backend.db.session import get_db
 from backend.ingestion.csv_parser import parse_patients_csv
+from backend.ingestion.pdf_parser import extract_text_from_pdf, parse_patient_from_pdf_text
 from backend.ml.predict import score_patient
 from backend.models.orm import LabResult, Patient, Vital
 from backend.models.schemas import (
@@ -87,6 +88,32 @@ def upload_patients_csv(
         "created": len(orm_patients),
         "errors": result.errors,
     }
+
+
+@router.post("/upload/pdf", response_model=PatientRead, status_code=201)
+def upload_patient_pdf(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+) -> Patient:
+    if not (file.filename and file.filename.lower().endswith(".pdf")) and file.content_type != "application/pdf":
+        raise HTTPException(status_code=415, detail="Expected a PDF file.")
+
+    data = file.file.read()
+    try:
+        text = extract_text_from_pdf(data)
+    except Exception as exc:
+        raise HTTPException(status_code=422, detail=f"Could not read PDF: {exc}") from exc
+
+    name = file.filename.rsplit(".", 1)[0] if file.filename else None
+    parsed = parse_patient_from_pdf_text(text, name=name)
+    if not parsed.labs:
+        raise HTTPException(status_code=422, detail="No recognizable lab values found in the PDF.")
+
+    patient = _to_orm(parsed)
+    db.add(patient)
+    db.commit()
+    db.refresh(patient)
+    return patient
 
 
 @router.get("", response_model=list[PatientSummary])
