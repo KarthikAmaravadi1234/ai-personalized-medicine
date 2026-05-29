@@ -1,6 +1,6 @@
 # AI Personalized Medicine
 
-An educational project exploring how intelligent agents and modern diagnostics can enable personalized healthcare — from risk assessment to treatment insights.
+An educational **Python** project exploring how intelligent agents and modern diagnostics can enable personalized healthcare — from risk assessment to treatment insights.
 
 > **Disclaimer:** This is a learning project, not a medical device or clinical tool. Nothing here constitutes medical advice. Do not use outputs for real health decisions without consulting a qualified healthcare provider.
 
@@ -23,13 +23,13 @@ Three forces are making this practical at scale:
 - Answer patient-specific questions with citations and uncertainty
 - Flag risks, anomalies, and follow-up questions for clinician review
 
-This repository is a **hands-on sandbox** to learn AI by building pieces of that ecosystem — starting simple, growing in complexity.
+This repository is a **hands-on Python sandbox** to learn AI by building pieces of that ecosystem — starting simple, growing in complexity.
 
 ---
 
 ## What We're Building
 
-A modular platform with four core capabilities, implemented incrementally:
+A modular Python platform with four core capabilities, implemented incrementally:
 
 | Module | Purpose | Learning focus |
 |--------|---------|----------------|
@@ -49,12 +49,14 @@ flowchart TB
         EHR[EHR FHIR export]
     end
 
-    subgraph backend [Backend]
+    subgraph pythonApp [Python Application]
         Ingest[Ingestion and normalization]
         Store[(PostgreSQL plus object storage)]
         Vector[(Vector store)]
         Agent[AI health agent]
         ML[Risk scoring models]
+        API[FastAPI REST API]
+        UI[Streamlit UI]
     end
 
     subgraph outputs [Outputs]
@@ -68,38 +70,41 @@ flowchart TB
     Store --> Agent
     Vector --> Agent
     Store --> ML
+    Agent --> API
+    Agent --> UI
+    ML --> Alerts
     Agent --> Chat
     Agent --> Reports
-    ML --> Alerts
     Agent --> Alerts
 ```
 
 ---
 
-## Recommended Tech Stack (Learning-Oriented)
+## Tech Stack (Python)
 
-Python-first — best ecosystem for AI/ML learning, with a thin web layer for interaction.
+The entire project is built in **Python 3.11+** — backend, AI/ML, agents, and UI.
 
 ### Core
 
 | Layer | Choice | Why |
 |-------|--------|-----|
-| **Language** | Python 3.11+ | Dominant ML/AI ecosystem |
-| **API** | [FastAPI](https://fastapi.tiangolo.com/) | Async, typed, great docs, easy to learn |
+| **Language** | Python 3.11+ | Dominant ML/AI ecosystem; one language end-to-end |
+| **API** | [FastAPI](https://fastapi.tiangolo.com/) | Async, typed, auto-generated OpenAPI docs |
+| **UI** | [Streamlit](https://streamlit.io/) | Pure Python frontend for rapid prototyping |
 | **Agent framework** | [LangGraph](https://langchain-ai.github.io/langgraph/) or [Pydantic AI](https://ai.pydantic.dev/) | Tool-calling agents with explicit control flow |
 | **LLM** | OpenAI / Anthropic API (or Ollama locally) | Start with APIs; swap to local models later |
 | **Embeddings + RAG** | [ChromaDB](https://www.trychroma.com/) or pgvector | Simple local vector store; pgvector scales with Postgres |
-| **Database** | PostgreSQL | Structured patient data, JSONB for flexible records |
+| **Database** | PostgreSQL + [SQLAlchemy](https://www.sqlalchemy.org/) | Structured patient data, JSONB for flexible records |
 | **ML** | scikit-learn, pandas, XGBoost | Classical ML before deep learning |
-| **Frontend** | Next.js or Streamlit | Streamlit for fast prototypes; Next.js when you want a real UI |
+| **Validation** | [Pydantic](https://docs.pydantic.dev/) | Typed schemas for patients, labs, and API payloads |
 
 ### Supporting tools
 
-- **uv** or **poetry** — dependency management
-- **Docker** — reproducible dev environment
+- **[uv](https://docs.astral.sh/uv/)** — fast Python dependency and virtualenv management
+- **Docker** — PostgreSQL and other services via Compose
 - **pytest** — testing
 - **Ruff** — linting and formatting
-- **Jupyter** — experiments and EDA
+- **Jupyter** — experiments and EDA in `notebooks/`
 
 ### Data sources (public, for learning)
 
@@ -110,26 +115,32 @@ Python-first — best ecosystem for AI/ML learning, with a thin web layer for in
 
 ---
 
-## Project Structure (Target)
+## Project Structure
 
 ```
 ai-personalized-medicine/
 ├── README.MD
-├── pyproject.toml
-├── docker-compose.yml
-├── backend/
-│   ├── api/              # FastAPI routes
-│   ├── agents/           # Health agent + tools
-│   ├── ingestion/        # Parsers for labs, VCF, CSV
-│   ├── ml/               # Risk models
-│   ├── rag/              # Document indexing and retrieval
-│   └── models/           # Pydantic schemas
-├── frontend/             # Streamlit or Next.js app
+├── pyproject.toml              # Python dependencies and project config
+├── .env.example                # Environment variable template
+├── .gitignore
+├── docker/
+│   └── docker-compose.yaml     # PostgreSQL and other services
+├── backend/                    # Core Python application
+│   ├── api/                    # FastAPI routes and app entrypoint
+│   ├── agents/                 # Health agent + tools
+│   ├── db/                     # Database connection and sessions
+│   ├── ingestion/              # Parsers for labs, VCF, CSV
+│   ├── ml/                     # Risk scoring models
+│   ├── rag/                    # Document indexing and retrieval
+│   └── models/                 # Pydantic and SQLAlchemy schemas
+├── frontend/                   # Streamlit UI (Python)
+│   └── app.py
+├── scripts/                    # CLI utilities (e.g. generate synthetic data)
 ├── data/
-│   ├── synthetic/        # Fake patients for dev
-│   └── knowledge/        # Guidelines, sample literature
-├── notebooks/            # Exploratory analysis
-└── tests/
+│   ├── synthetic/              # Fake patients for dev
+│   └── knowledge/              # Guidelines, sample literature
+├── notebooks/                  # Jupyter notebooks for exploration
+└── tests/                      # pytest test suite
 ```
 
 ---
@@ -139,12 +150,12 @@ ai-personalized-medicine/
 Build in phases. Each phase teaches distinct AI skills.
 
 ### Phase 1 — Foundation (Week 1–2)
-- [ ] Set up Python project, FastAPI hello-world, Docker Compose
-- [ ] Define patient schema (demographics, labs, variants, vitals)
+- [ ] Set up Python project (`pyproject.toml`), FastAPI hello-world, Docker Compose
+- [ ] Define patient schema (demographics, labs, variants, vitals) with Pydantic
 - [ ] Generate 10–50 synthetic patient records
 - [ ] Build a simple REST API: upload CSV → store in Postgres
 
-**You learn:** API design, data modeling, SQL
+**You learn:** API design, data modeling, SQL, Python project layout
 
 ### Phase 2 — RAG over medical knowledge (Week 3–4)
 - [ ] Chunk and embed sample guidelines (e.g., CDC, NIH fact sheets)
@@ -168,12 +179,12 @@ Build in phases. Each phase teaches distinct AI skills.
 **You learn:** Feature engineering, model evaluation, AI + ML hybrid systems
 
 ### Phase 5 — Polish (Week 10+)
-- [ ] Streamlit or Next.js UI
+- [ ] Streamlit UI wired to the FastAPI backend
 - [ ] PDF lab report parser
 - [ ] Evaluation harness (golden Q&A pairs)
 - [ ] Write-up: what worked, what didn't
 
-**You learn:** Full-stack integration, evaluation, product thinking
+**You learn:** Full-stack Python integration, evaluation, product thinking
 
 ---
 
@@ -182,38 +193,45 @@ Build in phases. Each phase teaches distinct AI skills.
 ### Prerequisites
 
 - Python 3.11+
-- Docker (optional but recommended)
+- [uv](https://docs.astral.sh/uv/getting-started/installation/) (recommended) or pip
+- Docker (for PostgreSQL)
 - An LLM API key (OpenAI, Anthropic) or [Ollama](https://ollama.com/) for local models
 
-### Quick start (once scaffold exists)
+### Quick start
 
 ```bash
 # Clone the repo
 git clone https://github.com/KarthikAmaravadi1234/ai-personalized-medicine.git
 cd ai-personalized-medicine
 
-# Install dependencies
-uv sync   # or: pip install -e .
+# Create virtualenv and install dependencies
+uv sync
 
-# Start services
-docker compose up -d
+# Copy environment template and fill in values
+cp .env.example .env
+
+# Start PostgreSQL
+docker compose -f docker/docker-compose.yaml up -d
 
 # Run the API
-uvicorn backend.api.main:app --reload
+uv run uvicorn backend.api.main:app --reload
 
-# Run the UI (Streamlit)
-streamlit run frontend/app.py
+# Run the Streamlit UI (separate terminal)
+uv run streamlit run frontend/app.py
 ```
+
+API docs are available at `http://localhost:8000/docs` once the server is running.
 
 ---
 
 ## Key Design Principles
 
-1. **Synthetic data first** — never commit real PHI; use fakes until you understand privacy (HIPAA) requirements.
-2. **Citations over confidence** — every health claim should trace to a source or patient record field.
-3. **Human in the loop** — agents suggest; clinicians (or you, in dev) validate.
-4. **Modular agents** — separate ingestion, retrieval, reasoning, and reporting into testable units.
-5. **Evaluate continuously** — maintain a small set of question/answer pairs and score retrieval + response quality.
+1. **Python everywhere** — backend, ML, agents, and UI all in one language.
+2. **Synthetic data first** — never commit real PHI; use fakes until you understand privacy (HIPAA) requirements.
+3. **Citations over confidence** — every health claim should trace to a source or patient record field.
+4. **Human in the loop** — agents suggest; clinicians (or you, in dev) validate.
+5. **Modular packages** — separate ingestion, retrieval, reasoning, and reporting into testable units under `backend/`.
+6. **Evaluate continuously** — maintain a small set of question/answer pairs and score retrieval + response quality.
 
 ---
 
