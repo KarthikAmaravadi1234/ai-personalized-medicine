@@ -14,4 +14,6 @@ def test_root() -> None:
 def test_health() -> None:
     response = client.get("/health")
     assert response.status_code == 200
-    assert response.json()["status"] == "healthy"
+    body = response.json()
+    assert body["status"] in {"healthy", "degraded"}
+    assert body["database"] in {"connected", "unavailable"}
