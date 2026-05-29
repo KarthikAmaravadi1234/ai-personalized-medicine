@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 from backend.rag.chunker import chunk_text
@@ -11,6 +12,13 @@ from backend.rag.store import SearchHit, VectorStore
 _PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_KNOWLEDGE_DIR = _PROJECT_ROOT / "data" / "knowledge"
 DEFAULT_INDEX_PATH = _PROJECT_ROOT / "data" / "knowledge_index.json"
+
+_FRONTMATTER_RE = re.compile(r"\A---\r?\n.*?\r?\n---\r?\n", re.DOTALL)
+
+
+def _strip_frontmatter(text: str) -> str:
+    """Remove a leading YAML frontmatter block so provenance metadata isn't embedded."""
+    return _FRONTMATTER_RE.sub("", text, count=1)
 
 
 class Retriever:
@@ -32,7 +40,7 @@ class Retriever:
         sources: list[str] = []
         indices: list[int] = []
         for file in sorted(directory.glob(pattern)):
-            content = file.read_text()
+            content = _strip_frontmatter(file.read_text())
             for chunk in chunk_text(content, source=file.name):
                 texts.append(chunk.text)
                 sources.append(chunk.source)

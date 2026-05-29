@@ -36,6 +36,12 @@ ai = [
     "langchain-openai>=0.2.0",
     "chromadb>=0.5.0",
 ]
+data = [
+    # Optional: richer HTML cleaning for the knowledge fetch pipeline.
+    # The default pipeline uses Wikipedia plain-text extracts + stdlib html.parser,
+    # so this is only needed for heavier HTML sources.
+    "beautifulsoup4>=4.12.0",
+]
 
 [build-system]
 requires = ["hatchling"]

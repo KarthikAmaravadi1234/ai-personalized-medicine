@@ -1,0 +1,90 @@
+[
+  {
+    "slug": "bmi",
+    "title": "Body mass index",
+    "source": "wikipedia",
+    "source_url": "https://en.wikipedia.org/wiki/Body_mass_index",
+    "license": "CC BY-SA 4.0",
+    "retrieved": "2026-05-29"
+  },
+  {
+    "slug": "fasting_glucose",
+    "title": "Blood sugar level",
+    "source": "wikipedia",
+    "source_url": "https://en.wikipedia.org/wiki/Blood_sugar_level",
+    "license": "CC BY-SA 4.0",
+    "retrieved": "2026-05-29"
+  },
+  {
+    "slug": "hba1c",
+    "title": "Glycated hemoglobin",
+    "source": "wikipedia",
+    "source_url": "https://en.wikipedia.org/wiki/Glycated_hemoglobin",
+    "license": "CC BY-SA 4.0",
+    "retrieved": "2026-05-29"
+  },
+  {
+    "slug": "hdl_cholesterol",
+    "title": "High-density lipoprotein",
+    "source": "wikipedia",
+    "source_url": "https://en.wikipedia.org/wiki/High-density_lipoprotein",
+    "license": "CC BY-SA 4.0",
+    "retrieved": "2026-05-29"
+  },
+  {
+    "slug": "hypertension",
+    "title": "Hypertension",
+    "source": "wikipedia",
+    "source_url": "https://en.wikipedia.org/wiki/Hypertension",
+    "license": "CC BY-SA 4.0",
+    "retrieved": "2026-05-29"
+  },
+  {
+    "slug": "ldl_cholesterol",
+    "title": "Low-density lipoprotein",
+    "source": "wikipedia",
+    "source_url": "https://en.wikipedia.org/wiki/Low-density_lipoprotein",
+    "license": "CC BY-SA 4.0",
+    "retrieved": "2026-05-29"
+  },
+  {
+    "slug": "metabolic_syndrome",
+    "title": "Metabolic syndrome",
+    "source": "wikipedia",
+    "source_url": "https://en.wikipedia.org/wiki/Metabolic_syndrome",
+    "license": "CC BY-SA 4.0",
+    "retrieved": "2026-05-29"
+  },
+  {
+    "slug": "obesity",
+    "title": "Obesity",
+    "source": "wikipedia",
+    "source_url": "https://en.wikipedia.org/wiki/Obesity",
+    "license": "CC BY-SA 4.0",
+    "retrieved": "2026-05-29"
+  },
+  {
+    "slug": "total_cholesterol",
+    "title": "Cholesterol",
+    "source": "wikipedia",
+    "source_url": "https://en.wikipedia.org/wiki/Cholesterol",
+    "license": "CC BY-SA 4.0",
+    "retrieved": "2026-05-29"
+  },
+  {
+    "slug": "triglycerides",
+    "title": "Triglyceride",
+    "source": "wikipedia",
+    "source_url": "https://en.wikipedia.org/wiki/Triglyceride",
+    "license": "CC BY-SA 4.0",
+    "retrieved": "2026-05-29"
+  },
+  {
+    "slug": "type2_diabetes",
+    "title": "Type 2 diabetes",
+    "source": "wikipedia",
+    "source_url": "https://en.wikipedia.org/wiki/Type_2_diabetes",
+    "license": "CC BY-SA 4.0",
+    "retrieved": "2026-05-29"
+  }
+]
