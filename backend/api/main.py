@@ -12,7 +12,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
-from backend.api.routes import patients
+from backend.api.routes import knowledge, patients
 from backend.db.engine import check_connection
 from backend.db.init_db import init_db
 
@@ -37,6 +37,7 @@ app = FastAPI(
 )
 
 app.include_router(patients.router)
+app.include_router(knowledge.router)
 
 
 @app.get("/")
